@@ -1,0 +1,41 @@
+/* Tema 3: Atardecer (Femenino/Claro) */
+:root {
+    --bg-color: #fef6e4; /* Crema suave */
+    --canvas-bg-color: #ffffff;
+    --text-color: #575279; /* Púrpura oscuro desaturado */
+    --text-muted-color: #797593; /* Gris lavanda */
+    --border-color: #f3d9dc; /* Rosa pálido */
+    --controls-bg-color: rgba(254, 246, 228, 0.8);
+    --shadow-color: rgba(87, 82, 121, 0.1);
+    --focus-ring-color: rgba(255, 134, 122, 0.3);
+    --primary-accent: #ff867a; /* Coral vivo */
+
+    /* Paleta de colores para nodos - Tonos cálidos y orgánicos de un atardecer */
+    --level-0-color: #ff867a; /* Coral Vivo */
+    --level-1-color: #a78bfa; /* Lavanda */
+    --level-2-color: #34d399; /* Verde Jade */
+    --level-3-color: #fbbf24; /* Dorado Sol */
+    --level-4-color: #60a5fa; /* Azul Cielo */
+    --level-5-color: #f472b6; /* Rosa Orquídea */
+    --level-6-color: #9ca3af; /* Gris Perla (para ejemplos) */
+    --level-7-color: #6b7280; /* Gris Roca (para ejemplos) */
+}
+
+/* Efectos y mejoras visuales */
+.top-controls, .controls {
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 32px var(--shadow-color);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.control-btn, .btn.small {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.control-btn:hover, .btn.small:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(87, 82, 121, 0.15);
+    border-color: var(--primary-accent);
+    color: var(--primary-accent);
+}
