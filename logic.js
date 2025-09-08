@@ -18,7 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentMatchIndex: -1,
                 matchedSet: new Set(),
                 areAllNodesExpanded: true,
-                // Estado para gestos táctiles
                 isPinching: false,
                 lastPinchDistance: 0,
                 touchPoints: []
@@ -35,8 +34,8 @@ document.addEventListener('DOMContentLoaded', () => {
             this.config = {
                 NODE_MIN_WIDTH: 260,
                 NODE_MIN_HEIGHT: 100,
-                HORIZONTAL_SPACING: 160, // Aumentado para más espacio
-                VERTICAL_SPACING: 70,   // Aumentado para más espacio
+                HORIZONTAL_SPACING: 160,
+                VERTICAL_SPACING: 70,
                 LEVEL_COLORS: [],
                 PADDING: 20,
                 FONT_SIZES: { title: [20, 17, 15, 14, 13, 12, 11, 11], definition: [14, 13, 12, 11, 11, 10, 10, 10] },
@@ -58,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 mapSelector: document.getElementById('map-selector'),
                 themeSelector: document.getElementById('theme-selector'),
                 searchInput: document.getElementById('search-input'),
+                searchStatus: document.getElementById('search-status'),
                 toggleControlsBtn: document.getElementById('toggle-controls-btn'),
                 topControls: document.getElementById('top-controls'),
                 bottomControls: document.getElementById('bottom-controls'),
@@ -145,11 +145,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        traverseAll(node, callback) {
+        // Mejorado para pasar el nodo padre, útil para la navegación de búsqueda.
+        traverseAll(node, callback, parent = null) {
             if (!node) return;
-            callback(node);
+            callback(node, parent);
             if (node.children) {
-                node.children.forEach(child => this.traverseAll(child, callback));
+                node.children.forEach(child => this.traverseAll(child, callback, node));
             }
         }
     }
@@ -248,9 +249,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     currentYRight += child.subtreeHeight + this.config.VERTICAL_SPACING;
                 });
             }
-            if (centerView) {
-                const rect = this.state.canvas.getBoundingClientRect();
+            if (centerView && this.state.rootNode) {
                 this.state.scale = 0.5;
+                const rect = this.state.canvas.getBoundingClientRect();
                 this.state.offset.x = rect.width / 2;
                 this.state.offset.y = rect.height / 2;
             }
@@ -349,9 +350,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const textMetrics = this.utils.measureText(labelText, font);
                 const textWidth = textMetrics.width;
                 const textHeight = 13;
-                const t = 0.5; // Punto medio de la curva de Bézier
-                const labelX = (1 - t) ** 2 * startX + 2 * (1 - t) * t * cp1x + t ** 2 * endX;
-                const labelY = (1 - t) ** 2 * startY + 2 * (1 - t) * t * endY + t ** 2 * endY;
+                const t = 0.5;
+                const labelX = (1 - t) ** 3 * startX + 3 * (1 - t) ** 2 * t * cp1x + 3 * (1 - t) * t ** 2 * cp1x + t ** 3 * endX;
+                const labelY = (1 - t) ** 3 * startY + 3 * (1 - t) ** 2 * t * startY + 3 * (1 - t) * t ** 2 * endY + t ** 3 * endY;
                 const angle = Math.atan2(endY - startY, endX - startX);
                 const padding = 4;
                 this.state.ctx.save();
@@ -426,26 +427,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         getHoveredNode(mouseX, mouseY) {
-            const wx = (mouseX - this.state.offset.x) / this.state.scale;
-            const wy = (mouseY - this.state.offset.y) / this.state.scale;
-            let found = null;
-            const find = (node) => {
-                if (!node || found) return;
-                if (wx >= node.x && wx <= node.x + node.width && wy >= node.y && wy <= node.y + node.height) {
-                    found = node;
-                    return;
+            let foundNode = null;
+            const checkNode = (node) => {
+                if (!node) return;
+                const worldX = (mouseX - this.state.offset.x) / this.state.scale;
+                const worldY = (mouseY - this.state.offset.y) / this.state.scale;
+                if (worldX >= node.x && worldX <= node.x + node.width && worldY >= node.y && worldY <= node.y + node.height) {
+                    foundNode = node;
                 }
-                if (node.children && !node.collapsed) {
+                if (!node.collapsed && node.children) {
                     for (let i = node.children.length - 1; i >= 0; i--) {
-                        find(node.children[i]);
+                        if (foundNode) break;
+                        checkNode(node.children[i]);
                     }
                 }
             };
-            find(this.state.rootNode);
-            return found;
+            checkNode(this.state.rootNode);
+            return foundNode;
         }
 
-        // --- Eventos de Ratón ---
         handleMouseDown(e) {
             this.state.isPanning = true;
             this.state.panStart = { x: e.clientX - this.state.offset.x, y: e.clientY - this.state.offset.y };
@@ -482,10 +482,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (this.state.hoveredNode && this.state.hoveredNode.children && this.state.hoveredNode.children.length > 0) {
                 this.state.hoveredNode.collapsed = !this.state.hoveredNode.collapsed;
                 this.layoutEngine.runLayout(false);
+                this.renderer.requestRedraw();
             }
         }
 
-        // --- Eventos Táctiles ---
         handleTouchStart(e) {
             e.preventDefault();
             const touches = e.touches;
@@ -514,15 +514,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         handleTouchEnd(e) {
-            if (e.touches.length < 2) {
-                this.state.isPinching = false;
-            }
-            if (e.touches.length < 1) {
-                this.handleMouseUp();
-            }
+            if (e.touches.length < 2) this.state.isPinching = false;
+            if (e.touches.length < 1) this.handleMouseUp();
         }
 
-        // --- Lógica de Gestos ---
         getPinchDistance() {
             const [t1, t2] = this.state.touchPoints;
             return Math.hypot(t1.x - t2.x, t1.y - t2.y);
@@ -545,22 +540,95 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         bindEvents() {
-            // Ratón
             this.dom.canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
             this.dom.canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
             this.dom.canvas.addEventListener('mouseleave', this.handleMouseUp.bind(this));
             this.dom.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
             this.dom.canvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
             this.dom.canvas.addEventListener('dblclick', this.handleDblClick.bind(this));
-            // Táctil
             this.dom.canvas.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
             this.dom.canvas.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
             this.dom.canvas.addEventListener('touchend', this.handleTouchEnd.bind(this));
         }
     }
 
-    // El resto de las clases (UIManager, ExportService, MindMapApp) permanecen aquí...
-    // ... (El código de las clases UIManager, ExportService y MindMapApp se inserta aquí sin cambios)
+    // Módulo 8: Funcionalidades Avanzadas (Búsqueda, Centrado)
+    class FeatureEngine {
+        constructor(stateManager, layoutEngine, renderer, domManager, utils) {
+            this.state = stateManager.getState();
+            this.layoutEngine = layoutEngine;
+            this.renderer = renderer;
+            this.dom = domManager.dom;
+            this.utils = utils;
+            this.animationFrame = null;
+        }
+
+        runSearch(query) {
+            const searchTerm = query.trim().toLowerCase();
+            this.state.matchedSet.clear();
+            this.state.searchResults = [];
+            this.state.currentMatchIndex = -1;
+            this.dom.searchInput.classList.remove('no-match');
+            this.dom.searchStatus.textContent = '';
+
+            if (searchTerm.length < 2) {
+                this.renderer.requestRedraw();
+                return;
+            }
+
+            this.utils.traverseAll(this.state.rootNode, node => {
+                const titleMatch = node.title && node.title.toLowerCase().includes(searchTerm);
+                const defMatch = node.definition && node.definition.toLowerCase().includes(searchTerm);
+                if (titleMatch || defMatch) {
+                    this.state.searchResults.push(node);
+                    this.state.matchedSet.add(node);
+                }
+            });
+
+            if (this.state.searchResults.length === 0) {
+                this.dom.searchInput.classList.add('no-match');
+                this.dom.searchStatus.textContent = 'No encontrado';
+            } else {
+                const count = this.state.searchResults.length;
+                this.dom.searchStatus.textContent = `${count} resultado${count > 1 ? 's' : ''}`;
+            }
+            this.renderer.requestRedraw();
+        }
+
+        centerOnNode(node, targetScale = null) {
+            if (!node) return;
+            if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
+
+            const rect = this.state.canvas.getBoundingClientRect();
+            const finalScale = targetScale !== null ? targetScale : Math.min(1.0, this.state.scale); // Evita un zoom excesivo al centrar
+            const targetX = rect.width / 2 - (node.x + node.width / 2) * finalScale;
+            const targetY = rect.height / 2 - (node.y + node.height / 2) * finalScale;
+
+            const duration = 500;
+            const startTime = performance.now();
+            const startOffset = { ...this.state.offset };
+            const startScale = this.state.scale;
+
+            const animate = (currentTime) => {
+                const elapsedTime = currentTime - startTime;
+                const progress = Math.min(elapsedTime / duration, 1);
+                const easeProgress = 0.5 - 0.5 * Math.cos(progress * Math.PI);
+
+                this.state.offset.x = startOffset.x + (targetX - startOffset.x) * easeProgress;
+                this.state.offset.y = startOffset.y + (targetY - startOffset.y) * easeProgress;
+                this.state.scale = startScale + (finalScale - startScale) * easeProgress;
+
+                this.renderer.requestRedraw();
+
+                if (progress < 1) {
+                    this.animationFrame = requestAnimationFrame(animate);
+                }
+            };
+            this.animationFrame = requestAnimationFrame(animate);
+        }
+    }
+
+    // Módulo 9: Gestor de Interfaz de Usuario
     class UIManager {
         constructor(stateManager, domManager, app) {
             this.state = stateManager.getState();
@@ -573,9 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!this.state.rootNode) return;
             const shouldExpand = !this.state.areAllNodesExpanded;
             this.app.utils.traverseAll(this.state.rootNode, node => {
-                if (node.level > 0) {
-                    node.collapsed = !shouldExpand;
-                }
+                if (node.level > 0) node.collapsed = !shouldExpand;
             });
             this.state.areAllNodesExpanded = shouldExpand;
             this.updateToggleAllButton();
@@ -595,16 +661,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         showGlossary() {
             if (!window.glossaryData) {
-                console.error("Datos del glosario no encontrados.");
-                return;
+                this.dom.glossaryBody.innerHTML = `<div class="glossary-item"><div class="glossary-definition">No hay un glosario disponible para este mapa.</div></div>`;
+            } else {
+                this.dom.glossaryBody.innerHTML = '';
+                window.glossaryData.forEach(item => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'glossary-item';
+                    itemDiv.innerHTML = `<div class="glossary-term">${item.term}</div><div class="glossary-definition">${item.definition}</div>`;
+                    this.dom.glossaryBody.appendChild(itemDiv);
+                });
             }
-            this.dom.glossaryBody.innerHTML = '';
-            window.glossaryData.forEach(item => {
-                const itemDiv = document.createElement('div');
-                itemDiv.className = 'glossary-item';
-                itemDiv.innerHTML = `<div class="glossary-term">${item.term}</div><div class="glossary-definition">${item.definition}</div>`;
-                this.dom.glossaryBody.appendChild(itemDiv);
-            });
             this.dom.modal.hidden = false;
             setTimeout(() => this.dom.modal.classList.add('visible'), 10);
         }
@@ -623,16 +689,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     this.state.currentMatchIndex = (this.state.currentMatchIndex + (e.shiftKey ? -1 : 1) + this.state.searchResults.length) % this.state.searchResults.length;
+                    this.dom.searchStatus.textContent = `${this.state.currentMatchIndex + 1}/${this.state.searchResults.length}`;
                     const targetNode = this.state.searchResults[this.state.currentMatchIndex];
                     let parent = targetNode.parent;
-                    while(parent) {
-                        parent.collapsed = false;
+                    while (parent) {
+                        if (parent.collapsed) parent.collapsed = false;
                         parent = parent.parent;
                     }
                     this.app.layoutEngine.runLayout(false);
                     this.app.featureEngine.centerOnNode(targetNode);
                 } else if (e.key === 'Escape') {
-                    this.dom.searchInput.value = ''; this.app.featureEngine.runSearch(''); this.dom.searchInput.blur();
+                    this.dom.searchInput.value = '';
+                    this.app.featureEngine.runSearch('');
+                    this.dom.searchInput.blur();
                 }
             });
             this.dom.zoomInBtn.addEventListener('click', () => this.app.interactionHandler.zoomAtPoint(1.2, this.dom.canvas.clientWidth / 2, this.dom.canvas.clientHeight / 2));
@@ -643,22 +712,25 @@ document.addEventListener('DOMContentLoaded', () => {
             this.dom.toggleAllBtn.addEventListener('click', this.toggleAllNodes.bind(this));
             this.dom.glossaryBtn.addEventListener('click', this.showGlossary.bind(this));
             this.dom.modalCloseBtn.addEventListener('click', this.hideGlossary.bind(this));
-            this.dom.modal.addEventListener('click', (e) => {
-                if (e.target === this.dom.modal) this.hideGlossary();
-            });
+            this.dom.modal.addEventListener('click', (e) => { if (e.target === this.dom.modal) this.hideGlossary(); });
             window.addEventListener('keydown', (e) => {
                 if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
                     e.preventDefault();
                     this.dom.searchInput.focus();
                     this.dom.searchInput.select();
                 } else if (e.key === 'Escape') {
-                    this.hideGlossary();
+                    if (!this.dom.modal.hidden) this.hideGlossary();
+                    else this.dom.searchInput.blur();
                 }
             });
-            window.addEventListener('resize', () => this.app.layoutEngine.runLayout(true));
+            window.addEventListener('resize', () => {
+                this.app.layoutEngine.runLayout(false);
+                this.app.renderer.requestRedraw();
+            });
         }
     }
 
+    // Módulo 10: Servicio de Exportación
     class ExportService {
         constructor(stateManager, utils, configManager) {
             this.state = stateManager.getState();
@@ -684,6 +756,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const ty = -minY + pad;
             const mctx = document.createElement('canvas').getContext('2d');
             const getSVGTextLines = (text, font, maxWidth) => {
+                if (!text) return [];
                 mctx.font = font;
                 const words = String(text).split(' ');
                 if (!words.length || words[0] === "") return [];
@@ -705,12 +778,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const edgeColor = styles.getPropertyValue('--border-color').trim();
             let svgParts = [
                 `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
-                `<defs><style><![CDATA[`,
+                `<defs><style>`,
                 `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');`,
                 `.card { stroke: ${edgeColor}; }`,
                 `.title, .def { font-family: 'Inter', system-ui, sans-serif; }`,
                 `.edge { fill: none; stroke: ${edgeColor}; stroke-width: 2.5; }`,
-                `]]></style></defs>`,
+                `</style></defs>`,
                 `<rect width="100%" height="100%" fill="${bgColor}"/>`,
                 `<g transform="translate(${tx}, ${ty})">`
             ];
@@ -742,20 +815,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 const textX = this.config.PADDING + 4;
                 const maxW = width - this.config.PADDING * 2 - 8;
                 let yCursor = this.config.PADDING;
-                const titleToDraw = isExample ? `Ejemplo: ${n.title}` : n.title;
+                const titleToDraw = this.escapeXML(isExample ? `Ejemplo: ${n.title}` : n.title);
                 const titleLines = getSVGTextLines(titleToDraw, titleFont, maxW);
                 const titleFill = (level === 0 || isExample) ? styles.getPropertyValue('--text-color').trim() : color;
                 titleLines.forEach(line => {
                     const yPos = yCursor + this.config.LINE_HEIGHTS.title[tSafe] * 0.75;
-                    svgParts.push(`<text x="${textX}" y="${yPos}" font-size="${this.config.FONT_SIZES.title[tSafe]}px" font-weight="${isExample ? 500 : 700}" fill="${titleFill}">${this.escapeXML(line)}</text>`);
+                    svgParts.push(`<text x="${textX}" y="${yPos}" font-size="${this.config.FONT_SIZES.title[tSafe]}px" font-weight="${isExample ? 500 : 700}" fill="${titleFill}">${line}</text>`);
                     yCursor += this.config.LINE_HEIGHTS.title[tSafe];
                 });
                 if (n.definition) {
                     yCursor += 8;
-                    const defLines = getSVGTextLines(n.definition, defFont, maxW);
+                    const defToDraw = this.escapeXML(n.definition);
+                    const defLines = getSVGTextLines(defToDraw, defFont, maxW);
                     defLines.forEach(line => {
                         const yPos = yCursor + this.config.LINE_HEIGHTS.definition[dSafe] * 0.75;
-                        svgParts.push(`<text x="${textX}" y="${yPos}" font-size="${this.config.FONT_SIZES.definition[dSafe]}px" font-weight="400" fill="${styles.getPropertyValue('--text-muted-color').trim()}">${this.escapeXML(line)}</text>`);
+                        svgParts.push(`<text x="${textX}" y="${yPos}" font-size="${this.config.FONT_SIZES.definition[dSafe]}px" font-weight="400" fill="${styles.getPropertyValue('--text-muted-color').trim()}">${line}</text>`);
                         yCursor += this.config.LINE_HEIGHTS.definition[dSafe];
                     });
                 }
@@ -797,11 +871,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         exportAsSVG() {
+            if(!this.state.rootNode) return;
             const { svg } = this.buildSVG();
             if (svg) this.triggerDownload('mapa-mental.svg', `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
         }
 
         async exportAsPNG() {
+            if(!this.state.rootNode) return;
             const { svg, width, height } = this.buildSVG();
             if (!svg) return;
             try {
@@ -811,6 +887,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         async exportAsPDF() {
+            if(!this.state.rootNode) return;
             const { svg, width, height } = this.buildSVG();
             if (!svg) return;
             try {
@@ -829,12 +906,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Módulo 11: Clase Principal de la Aplicación
     class MindMapApp {
         constructor() {
             this.stateManager = new StateManager();
             this.configManager = new ConfigManager();
             this.domManager = new DOMManager();
-
             this.state = this.stateManager.getState();
             this.dom = this.domManager.dom;
 
@@ -850,9 +927,9 @@ document.addEventListener('DOMContentLoaded', () => {
             this.layoutEngine = new LayoutEngine(this.stateManager, this.configManager, this.utils);
             this.renderer = new Renderer(this.stateManager, this.configManager, this.utils);
             this.interactionHandler = new InteractionHandler(this.stateManager, this.domManager, this.layoutEngine, this.renderer);
+            this.featureEngine = new FeatureEngine(this.stateManager, this.layoutEngine, this.renderer, this.domManager, this.utils);
             this.uiManager = new UIManager(this.stateManager, this.domManager, this);
             this.exportService = new ExportService(this.stateManager, this.utils, this.configManager);
-            this.featureEngine = this.uiManager;
 
             this.init();
         }
@@ -870,8 +947,8 @@ document.addEventListener('DOMContentLoaded', () => {
         switchTheme(themeName) {
             const themeMap = {
                 'default': '',
-                'masculine': 'styles/cyberpunk.css',
-                'feminine': 'styles/atardecer.css'
+                'cyberpunk': 'styles/cyberpunk.css',
+                'atardecer': 'styles/atardecer.css'
             };
             this.dom.themeStylesheet.setAttribute('href', themeMap[themeName] || '');
             setTimeout(() => {
@@ -881,19 +958,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         loadMindMap(mapFile) {
+            const exportButtons = [this.dom.exportSvgBtn, this.dom.exportPngBtn, this.dom.exportPdfBtn];
+
             if (!mapFile) {
                 this.stateManager.set('rootNode', null);
                 this.renderer.requestRedraw();
+                exportButtons.forEach(btn => btn.disabled = true);
                 return;
             }
+
             const existingScript = document.getElementById('mind-map-data-script');
             if (existingScript) existingScript.remove();
+
             const script = document.createElement('script');
             script.id = 'mind-map-data-script';
             script.src = mapFile;
             script.onload = () => {
                 this.stateManager.set('rootNode', window.mindMapData);
-                this.utils.traverseAll(this.state.rootNode, node => {
+                this.utils.traverseAll(this.state.rootNode, (node, parent) => {
+                    node.parent = parent;
                     if (typeof node.collapsed === 'undefined') {
                         node.collapsed = false;
                     }
@@ -901,6 +984,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 this.stateManager.set('areAllNodesExpanded', false);
                 this.uiManager.toggleAllNodes();
                 this.layoutEngine.runLayout(true);
+                exportButtons.forEach(btn => btn.disabled = false);
             };
             script.onerror = () => console.error(`Error al cargar el mapa: ${mapFile}`);
             document.body.appendChild(script);
@@ -921,5 +1005,4 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     new MindMapApp();
-
 });
