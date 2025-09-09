@@ -1,6 +1,6 @@
 var mindMapData = {
     title: 'Arquitectura de Sistemas Computacionales y Paralelismo (Análisis Jerárquico Profundo)',
-    definition: 'Un análisis exhaustivo y detallado de los modelos de arquitectura para máquinas paralelas, centrado en la clasificación de Flynn, granularidad, sincronización y estructuras de memoria. Este mapa se basa en el documento de referencia "Sistemas Distribuidos" (Capítulo 13), excluyendo temas específicos de máquinas sistólicas, de flujo de datos y redes de interconexión (13.3.1, 13.3.2, 13.6.1-13.6.4).',
+    definition: 'Modelos de arquitectura para máquinas paralelas, en la clasificación de Flynn, granularidad, sincronización y estructuras de memoria. basandonos en el documento de referencia "Sistemas Distribuidos" (Capítulo 13), excluyendo temas específicos de máquinas sistólicas, de flujo de datos y redes de interconexión (13.3.1, 13.3.2, 13.6.1-13.6.4).',
     children: [
         {
             title: 'Fundamentos y Motivaciones del Paralelismo',
