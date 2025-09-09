@@ -500,17 +500,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         handleTouchMove(e) {
             e.preventDefault();
-            const touches = e.touches;
+            const touches = Array.from(e.touches).map(t => ({ x: t.clientX, y: t.clientY }));
             if (touches.length === 1 && this.state.isPanning) {
-                this.handleMouseMove(touches[0]);
+                this.handleMouseMove(e.touches[0]);
             } else if (touches.length === 2 && this.state.isPinching) {
-                const newDist = this.getPinchDistance();
-                const scaleFactor = newDist / this.state.lastPinchDistance;
-                const center = this.getPinchCenter();
-                this.zoomAtPoint(scaleFactor, center.x, center.y);
+                const newDist = Math.hypot(touches[0].x - touches[1].x, touches[0].y - touches[1].y);
+                const center = { x: (touches[0].x + touches[1].x)/2, y: (touches[0].y + touches[1].y)/2 };
+                this.zoomAtPoint(newDist / this.state.lastPinchDistance, center.x, center.y);
                 this.state.lastPinchDistance = newDist;
             }
-            this.state.touchPoints = Array.from(touches).map(t => ({ x: t.clientX, y: t.clientY }));
+            this.state.touchPoints = touches;
         }
 
         handleTouchEnd(e) {
