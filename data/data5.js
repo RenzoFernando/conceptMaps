@@ -6,9 +6,9 @@
  */
 (function(){
   var mindMapData = {
-    title: 'Dorfman — Ingeniería de Requisitos (Repaso: págs. 7, 12–16, 18–20) + System Life‑Cycle',
+    title: 'Dorfman — Ingeniería de Requisitos',
     connectorLabel: 'tema',
-    definition: 'Mapa conceptual fiel al paper de Dorfman. Todas las rutas llegan a nivel 6 con un nodo de ejemplo.',
+    definition: '',
     children: [
     {
           title: 'Introducción y beneficios (p.7)',
